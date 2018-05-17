@@ -46,13 +46,17 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
@@ -71,14 +75,14 @@ public class MainActivity extends AppCompatActivity {
     public static final int IMAGE_REQUEST_CODE = 2;
     private MessageAdapter mMessageAdapter;
     private String mUsername;
-    private FirebaseDatabase mFirebaseDatabase;
     private DatabaseReference mDatabaseReference;
-    private FirebaseStorage mFirebaseStorage;
     private StorageReference mStorageReference;
     private FirebaseAuth mFirebaseAuth;
     private FirebaseAuth.AuthStateListener mAuthStateListener;
+    private FirebaseRemoteConfig mFirebaseRemoteConfig;
     private ChildEventListener mChildEventListener;
     private boolean mIsUploading = false;
+    private static final String MESSAGE_LENGTH_KEY = "message_length_key";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,8 +91,10 @@ public class MainActivity extends AppCompatActivity {
         ButterKnife.bind(this);
 
         //Sets up Firebase variables
-        mFirebaseDatabase = FirebaseDatabase.getInstance();
-        mFirebaseStorage = FirebaseStorage.getInstance();
+        FirebaseDatabase mFirebaseDatabase = FirebaseDatabase.getInstance();
+        FirebaseStorage mFirebaseStorage = FirebaseStorage.getInstance();
+        mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
+        setUpRemoteConfigSettings();
 
         mDatabaseReference = mFirebaseDatabase.getReference()
                 .child("messages");
@@ -181,6 +187,53 @@ public class MainActivity extends AppCompatActivity {
                 mMessageEditText.setText("");
             }
         });
+    }
+
+    //Sets up the FirebaseRemoteConfig settings
+    private void setUpRemoteConfigSettings(){
+        FirebaseRemoteConfigSettings firebaseRemoteConfigSettings = new FirebaseRemoteConfigSettings.Builder()
+                .setDeveloperModeEnabled(BuildConfig.DEBUG)
+                .build();
+        mFirebaseRemoteConfig.setConfigSettings(firebaseRemoteConfigSettings);
+
+        //Sets up the Map for the RemoteConfig Parameters
+        Map<String, Object> map = new HashMap<>();
+        map.put(MESSAGE_LENGTH_KEY, DEFAULT_MSG_LENGTH_LIMIT);
+        mFirebaseRemoteConfig.setDefaults(map);
+        fetchRemoteConfigParameters();
+    }
+
+    //Fetches the RemoteConfig parameter values
+    private void fetchRemoteConfigParameters(){
+        long cacheExpiration = 3600;
+
+        if(mFirebaseRemoteConfig.getInfo()
+                .getConfigSettings()
+                .isDeveloperModeEnabled()){
+            cacheExpiration = 0;
+        }
+
+        mFirebaseRemoteConfig.fetch(cacheExpiration).addOnSuccessListener(new OnSuccessListener<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) {
+                //Applies the values fetched from Firebase to the app
+                mFirebaseRemoteConfig.activateFetched();
+                applyRemoteConfigParameters();
+            }
+        }).addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                //Applies the values (in case there is a cache)
+                applyRemoteConfigParameters();
+            }
+        });
+    }
+
+    //Method applies the appropriate RemoteConfig values
+    private void applyRemoteConfigParameters(){
+        //Sets the new max length for a message
+        int maxMessageLength = (int) mFirebaseRemoteConfig.getLong(MESSAGE_LENGTH_KEY);
+        mMessageEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(maxMessageLength)});
     }
 
     @Override
