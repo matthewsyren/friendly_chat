@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId "com.google.firebase.udacity.friendlychat"
-        minSdkVersion 16
+        minSdkVersion 22
         targetSdkVersion 27
         versionCode 1
         versionName "1.0"
@@ -34,6 +34,7 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'com.google.firebase:firebase-database:15.0.1'
+    implementation 'com.google.firebase:firebase-storage:15.0.2'
     implementation 'com.google.firebase:firebase-auth:15.1.0'
     implementation 'com.firebaseui:firebase-ui-auth:3.3.1'
     testImplementation 'junit:junit:4.12'

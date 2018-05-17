@@ -35,6 +35,7 @@ public class MessageAdapter extends ArrayAdapter<FriendlyMessage> {
             photoImageView.setVisibility(View.VISIBLE);
             Glide.with(photoImageView.getContext())
                     .load(message.getPhotoUrl())
+                    .placeholder(R.color.colorGrey)
                     .into(photoImageView);
         } else {
             messageTextView.setVisibility(View.VISIBLE);

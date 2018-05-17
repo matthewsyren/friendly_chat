@@ -16,6 +16,7 @@
 package com.google.firebase.udacity.friendlychat;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
@@ -34,6 +35,10 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.ChildEventListener;
@@ -41,6 +46,9 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageReference;
+import com.google.firebase.storage.UploadTask;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,13 +68,17 @@ public class MainActivity extends AppCompatActivity {
     //Variables
     public static final int DEFAULT_MSG_LENGTH_LIMIT = 1000;
     public static final int SIGN_IN_REQUEST_CODE = 1;
+    public static final int IMAGE_REQUEST_CODE = 2;
     private MessageAdapter mMessageAdapter;
     private String mUsername;
     private FirebaseDatabase mFirebaseDatabase;
     private DatabaseReference mDatabaseReference;
+    private FirebaseStorage mFirebaseStorage;
+    private StorageReference mStorageReference;
     private FirebaseAuth mFirebaseAuth;
     private FirebaseAuth.AuthStateListener mAuthStateListener;
     private ChildEventListener mChildEventListener;
+    private boolean mIsUploading = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,8 +88,14 @@ public class MainActivity extends AppCompatActivity {
 
         //Sets up Firebase variables
         mFirebaseDatabase = FirebaseDatabase.getInstance();
+        mFirebaseStorage = FirebaseStorage.getInstance();
+
         mDatabaseReference = mFirebaseDatabase.getReference()
                 .child("messages");
+
+        mStorageReference = mFirebaseStorage.getReference()
+                .child("chat_photos");
+
         mFirebaseAuth = FirebaseAuth.getInstance();
         mAuthStateListener = new FirebaseAuth.AuthStateListener() {
             @Override
@@ -118,7 +136,14 @@ public class MainActivity extends AppCompatActivity {
         mPhotoPickerButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                // TODO: Fire an intent to show an image picker
+                //Creates an Intent to allow the user to pick an image to send
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("image/jpeg");
+                intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+                startActivityForResult(
+                        intent,
+                        IMAGE_REQUEST_CODE
+                );
             }
         });
 
@@ -169,6 +194,49 @@ public class MainActivity extends AppCompatActivity {
                 finish();
             }
         }
+        else if(requestCode == IMAGE_REQUEST_CODE && resultCode == RESULT_OK){
+            Uri uri = data.getData();
+            if(uri != null){
+                mIsUploading = true;
+                mProgressBar.setVisibility(View.VISIBLE);
+
+                //Gets a reference to the upload target and uploads the file
+                final StorageReference storageReference = mStorageReference.child(uri.getLastPathSegment());
+                storageReference.putFile(uri)
+                        .addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+                            @Override
+                            public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                                storageReference.getDownloadUrl()
+                                        .addOnCompleteListener(new OnCompleteListener<Uri>() {
+                                    @Override
+                                    public void onComplete(@NonNull Task<Uri> task) {
+                                        //Gets the URL of the file
+                                        Uri uri = task.getResult();
+
+                                        if(uri != null){
+                                            //Saves the file's URL to the database once it is uploaded
+                                            FriendlyMessage friendlyMessage = new FriendlyMessage(null, mUsername, uri.toString());
+
+                                            mDatabaseReference.push()
+                                                    .setValue(friendlyMessage);
+
+                                            mProgressBar.setVisibility(View.INVISIBLE);
+                                            mIsUploading = false;
+                                        }
+                                    }
+                                });
+                            }
+                        })
+                        .addOnFailureListener(new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                Toast.makeText(getApplicationContext(), getString(R.string.error_image_upload), Toast.LENGTH_LONG).show();
+                                mProgressBar.setVisibility(View.INVISIBLE);
+                                mIsUploading = false;
+                            }
+                        });
+            }
+        }
     }
 
     //Sets up a ChildEventListener for the database
@@ -179,6 +247,11 @@ public class MainActivity extends AppCompatActivity {
                 public void onChildAdded(DataSnapshot dataSnapshot, String s) {
                     FriendlyMessage friendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
                     mMessageAdapter.add(friendlyMessage);
+
+                    //Hides ProgressBar if there is no image uploading
+                    if(!mIsUploading){
+                        mProgressBar.setVisibility(View.INVISIBLE);
+                    }
                 }
 
                 @Override
@@ -197,7 +270,6 @@ public class MainActivity extends AppCompatActivity {
                 public void onCancelled(DatabaseError databaseError) {
                 }
             };
-
             mDatabaseReference.addChildEventListener(mChildEventListener);
         }
     }
@@ -212,6 +284,7 @@ public class MainActivity extends AppCompatActivity {
 
     //Signs the user in
     private void signIn(String username){
+        mProgressBar.setVisibility(View.VISIBLE);
         mUsername = username;
         addChildEventListener();
     }
